@@ -5,10 +5,16 @@ import (
 )
 
 func Offer(url string, key string) (*Connection, error) {
+  /*
+    Makes an RTC offer. The key is sent to url/offer, 
+    then the negotiation with the key follow the policy
+	  specified in Connectioin.MakeWSConnection.
+	  Spawns a Connection.ConsumeSIgnaling process
+  */
 	connection := new(Connection)
 
 	connection.CreateBuffers(1)
-	_, err := connection.MakeWSConnection(url+"offer", key)
+	_, err := connection.MakeWSConnection(url+"/offer", key)
 	if err != nil {
 		return connection, err
 	}

@@ -11,20 +11,19 @@ const (
   url = "ws://127.0.0.1:8000/"
 )
 
-func chat(in chan string, out chan string) {
+func chat(in chan []byte, out chan []byte) {
   // really bad
 	var msg string
 	go func() {
 		for {
 			fmt.Println("msg received")
-			fmt.Println(<-out)
+			fmt.Println(string(<-out))
 		}
 	}()
 	for {
 		fmt.Scan(&msg)
-		in <- msg
+		in <- []byte(msg)
 		fmt.Println("msg sent")
-
 	}
 
 }
@@ -52,6 +51,5 @@ func main() {
 		panic(err)
 	}
 
-	go chat(conn.In, conn.Out)
-	select {}
+	chat(conn.In, conn.Out)
 }

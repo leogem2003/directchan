@@ -9,18 +9,26 @@ import (
 	"os"
 )
 
-const (
-	url = "wss://127.0.0.1:8000/"
-)
-
 type Connection struct {
+	// Signaling connection (websocket)
 	sock *websocket.Conn
+	// Peer connection (webrtc)
 	peer *webrtc.PeerConnection
-	Out  chan string
-	In   chan string
+
+	// IO buffers
+	Out chan []byte
+	In  chan []byte
+
+	// State channel
+	State chan string
 }
 
 func (c *Connection) MakeWSConnection(url string, key string) (*websocket.Conn, error) {
+	/*
+	  Makes a websocket connection with the given url and sends the key to it.
+	  Connection process: ws connect -> OK -> Ready
+	  Returns when the other peer has connected.
+	*/
 	conn, _, err := websocket.DefaultDialer.Dial(url, nil)
 	if err != nil {
 		return conn, err
@@ -56,7 +64,10 @@ func (c *Connection) MakeWSConnection(url string, key string) (*websocket.Conn, 
 	return conn, nil
 }
 
-func (c *Connection) SignalCandidate(candidate *webrtc.ICECandidate) error {
+func (c *Connection) signalCandidate(candidate *webrtc.ICECandidate) error {
+	/*
+	   Sends an ICEcandidate to the signaling server
+	*/
 	candidateJSON := []byte(candidate.ToJSON().Candidate)
 	return c.sock.WriteJSON(map[string][]byte{
 		"type": []byte("candidate"),
@@ -65,6 +76,10 @@ func (c *Connection) SignalCandidate(candidate *webrtc.ICECandidate) error {
 }
 
 func (c *Connection) MakePeerConnection() error {
+	/*
+	   Initialises a webRTC connection.
+	   This function only defines the parameters but does not handle the signaling
+	*/
 	config := webrtc.Configuration{
 		ICEServers: []webrtc.ICEServer{
 			{URLs: []string{"stun:stun.l.google.com:19302"}},
@@ -81,7 +96,7 @@ func (c *Connection) MakePeerConnection() error {
 		if candidate != nil {
 			// Send the ICE candidate to the signaling server
 			log.Println("Sending ICE candidate")
-			if err := c.SignalCandidate(candidate); err != nil {
+			if err := c.signalCandidate(candidate); err != nil {
 				log.Printf("Failed to send ICE candidate: %v", err)
 			}
 		}
@@ -102,6 +117,13 @@ func (c *Connection) MakePeerConnection() error {
 }
 
 func (c *Connection) ConsumeSignaling() error {
+	/*
+	   Consumes the signaling messages. This function is safe to be runned asynchronously
+	   Expected types:
+	     offer: an SDP offer
+	     answer: an SDP answer
+	     candidate: ICE candidate message
+	*/
 	var message map[string][]byte
 	var sdp webrtc.SessionDescription
 	for {
@@ -192,18 +214,19 @@ func (c *Connection) AttachFunctionality(dc *webrtc.DataChannel) {
 	dc.OnOpen(func() {
 		log.Println("channel opened!")
 		dc.SendText("Greetings from offerer")
-		var msg string
+		var msg []byte
 		for {
-			log.Println("Waiting user input")
 			msg = <-c.In
-			dc.SendText(msg)
+			if err := dc.Send(msg); err != nil {
+				log.Println("Error while sending: ", err)
+			}
 			log.Println("Sent ", msg)
 		}
 	})
 
 	dc.OnMessage(func(msg webrtc.DataChannelMessage) {
 		log.Println("Received message: ", string(msg.Data))
-		c.Out <- string(msg.Data)
+		c.Out <- msg.Data
 	})
 }
 
@@ -211,8 +234,8 @@ func (c *Connection) CreateBuffers(size uint) error {
 	if size == 0 {
 		return errors.New("Invalid size for channel: 0")
 	}
-	in := make(chan string, size)
-	out := make(chan string, size)
+	in := make(chan []byte, size)
+	out := make(chan []byte, size)
 	c.In = in
 	c.Out = out
 	return nil

@@ -1,13 +1,20 @@
-package connection;
+package connection
+
 import (
-  "log"
 	"github.com/pion/webrtc/v4"
+	"log"
 )
 
 func Answer(url string, key string) (*Connection, error) {
+	/*
+	   Answers to a sdp offer. The signaling request is sent to
+	   url/answer, then the negotiation with the key follow the policy
+	   specified in Connectioin.MakeWSConnection.
+	   Spawns a Connection.ConsumeSIgnaling process
+	*/
 	connection := new(Connection)
 	connection.CreateBuffers(1)
-	_, err := connection.MakeWSConnection(url+"answer", key)
+	_, err := connection.MakeWSConnection(url+"/answer", key)
 	log.Println("Made WS connection")
 	if err != nil {
 		return connection, err
@@ -26,5 +33,3 @@ func Answer(url string, key string) (*Connection, error) {
 	go connection.ConsumeSignaling()
 	return connection, nil
 }
-
-
