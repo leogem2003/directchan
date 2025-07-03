@@ -4,32 +4,31 @@ import (
   "encoding/json"
 )
 
-func Offer(url string, key string) (*Connection, error) {
+func Offer(settings *ConnectionSettings) (*Connection, error) {
   /*
     Makes an RTC offer. The key is sent to url/offer, 
     then the negotiation with the key follow the policy
 	  specified in Connectioin.MakeWSConnection.
 	  Spawns a Connection.ConsumeSIgnaling process
   */
-	connection := new(Connection)
-
-	connection.CreateBuffers(1)
-	_, err := connection.MakeWSConnection(url+"/offer", key)
+	connection := CreateConnection(settings) 
+	connection.CreateBuffers()
+	log.Println("Making WS connection")
+	_, err := connection.MakeWSConnection()
 	if err != nil {
 		return connection, err
 	}
-	log.Println("Making WS connection")
+	log.Println("Made WS connection")
+
 	if err := connection.MakePeerConnection(); err != nil {
 		return connection, err
-
 	}
-	log.Println("Made WS connection")
 
 	dc, err := connection.CreateDataChannel()
 	if err != nil {
 		return connection, err
 	}
-	connection.AttachFunctionality(dc)
+	connection.AttachFunctionality(dc, "offerer")
 
 	offer, err := connection.peer.CreateOffer(nil)
 	if err != nil {

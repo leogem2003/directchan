@@ -9,6 +9,16 @@ import (
 	"os"
 )
 
+// Settings for a Connection object
+type ConnectionSettings struct {
+	Signaling string // address of the signaling server ("ws://<ip>:<port>")
+	STUN []string
+	TURN string
+	Key string // Channel's identifier
+	BufferSize uint // Size in bytes of the output/input buffers
+	Operation string // ("offer" | "answer")
+}
+
 type Connection struct {
 	// Signaling connection (websocket)
 	sock *websocket.Conn
@@ -21,20 +31,31 @@ type Connection struct {
 
 	// State channel
 	State chan string
+
+	// settings
+	Settings *ConnectionSettings
 }
 
-func (c *Connection) MakeWSConnection(url string, key string) (*websocket.Conn, error) {
-	/*
-	  Makes a websocket connection with the given url and sends the key to it.
-	  Connection process: ws connect -> OK -> Ready
-	  Returns when the other peer has connected.
-	*/
+// Instantiates a new connection with given settinds
+func CreateConnection(settings *ConnectionSettings) *Connection {
+	c := new(Connection)
+	c.Settings = settings
+	return c
+}
+
+// Makes a websocket connection with the given url and sends the key to it.
+// Connection process: ws connect -> OK -> Ready
+// Returns when the other peer has connected.
+func (c *Connection) MakeWSConnection() (*websocket.Conn, error) {
+	log.Println("Establishing websocket connection with: ", c.Settings.Signaling)
+	url := c.Settings.Signaling + "/" + c.Settings.Operation
 	conn, _, err := websocket.DefaultDialer.Dial(url, nil)
 	if err != nil {
+		log.Fatal(err)
 		return conn, err
 	}
 
-	err = conn.WriteMessage(websocket.TextMessage, []byte(key))
+	err = conn.WriteMessage(websocket.TextMessage, []byte(c.Settings.Key))
 	if err != nil {
 		return conn, err
 	}
@@ -64,10 +85,8 @@ func (c *Connection) MakeWSConnection(url string, key string) (*websocket.Conn, 
 	return conn, nil
 }
 
+// Sends an ICEcandidate to the signaling server
 func (c *Connection) signalCandidate(candidate *webrtc.ICECandidate) error {
-	/*
-	   Sends an ICEcandidate to the signaling server
-	*/
 	candidateJSON := []byte(candidate.ToJSON().Candidate)
 	return c.sock.WriteJSON(map[string][]byte{
 		"type": []byte("candidate"),
@@ -76,13 +95,9 @@ func (c *Connection) signalCandidate(candidate *webrtc.ICECandidate) error {
 }
 
 func (c *Connection) MakePeerConnection() error {
-	/*
-	   Initialises a webRTC connection.
-	   This function only defines the parameters but does not handle the signaling
-	*/
 	config := webrtc.Configuration{
 		ICEServers: []webrtc.ICEServer{
-			{URLs: []string{"stun:stun.l.google.com:19302"}},
+			{URLs: c.Settings.STUN},
 		},
 	}
 
@@ -116,14 +131,13 @@ func (c *Connection) MakePeerConnection() error {
 	return nil
 }
 
+// Consumes the signaling messages. This function is safe to be runned asynchronously
+// Expected types:
+//  offer: an SDP offer
+//  answer: an SDP answer
+//  candidate: ICE candidate message
 func (c *Connection) ConsumeSignaling() error {
-	/*
-	   Consumes the signaling messages. This function is safe to be runned asynchronously
-	   Expected types:
-	     offer: an SDP offer
-	     answer: an SDP answer
-	     candidate: ICE candidate message
-	*/
+
 	var message map[string][]byte
 	var sdp webrtc.SessionDescription
 	for {
@@ -180,7 +194,7 @@ func (c *Connection) ConsumeSignaling() error {
 				return err
 			}
 		case "candidate":
-			log.Println("Received ICE candidate")
+			log.Println("Received ICE candidate", string(message["ice"]))
 			if err := c.peer.AddICECandidate(
 				webrtc.ICECandidateInit{Candidate: string(message["ice"])},
 			); err != nil {
@@ -210,32 +224,32 @@ func (c *Connection) CloseAll() error {
 	return nil
 }
 
-func (c *Connection) AttachFunctionality(dc *webrtc.DataChannel) {
+// Enables the server to send the stream to the output channel
+// and to receive the incoming data in the input channel
+func (c *Connection) AttachFunctionality(dc *webrtc.DataChannel, role string) {
 	dc.OnOpen(func() {
 		log.Println("channel opened!")
-		dc.SendText("Greetings from offerer")
+		dc.SendText("Greetings from "+role)
 		var msg []byte
 		for {
 			msg = <-c.In
 			if err := dc.Send(msg); err != nil {
 				log.Println("Error while sending: ", err)
 			}
-			log.Println("Sent ", msg)
 		}
 	})
 
 	dc.OnMessage(func(msg webrtc.DataChannelMessage) {
-		log.Println("Received message: ", string(msg.Data))
 		c.Out <- msg.Data
 	})
 }
 
-func (c *Connection) CreateBuffers(size uint) error {
-	if size == 0 {
+func (c *Connection) CreateBuffers() error {
+	if c.Settings.BufferSize == 0 {
 		return errors.New("Invalid size for channel: 0")
 	}
-	in := make(chan []byte, size)
-	out := make(chan []byte, size)
+	in := make(chan []byte, c.Settings.BufferSize)
+	out := make(chan []byte, c.Settings.BufferSize)
 	c.In = in
 	c.Out = out
 	return nil

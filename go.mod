@@ -1,4 +1,4 @@
-module github.com/leogem2003/chatrtc
+module github.com/leogem2003/directchan
 
 go 1.23.4
 
