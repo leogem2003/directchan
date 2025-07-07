@@ -2,9 +2,10 @@ package main
 
 import (
 	"fmt"
-	"github.com/leogem2003/directchan"
 	"log"
 	"os"
+
+	"github.com/leogem2003/directchan"
 )
 
 func chat(in chan []byte, out chan []byte) {
