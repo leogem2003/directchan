@@ -5,7 +5,7 @@ import (
 	"errors"
 	"github.com/gorilla/websocket"
 	"github.com/pion/webrtc/v4"
-	"log"
+	"log/slog"
 	"os"
 )
 
@@ -47,11 +47,11 @@ func CreateConnection(settings *ConnectionSettings) *Connection {
 // Connection process: ws connect -> OK -> Ready
 // Returns when the other peer has connected.
 func (c *Connection) MakeWSConnection() (*websocket.Conn, error) {
-	log.Println("Establishing websocket connection with: ", c.Settings.Signaling)
+	slog.Debug("Establishing websocket connection", "signaling server: ", c.Settings.Signaling)
 	url := c.Settings.Signaling + "/" + c.Settings.Operation
 	conn, _, err := websocket.DefaultDialer.Dial(url, nil)
 	if err != nil {
-		log.Fatal(err)
+		slog.Error(err.Error())
 		return conn, err
 	}
 
@@ -110,20 +110,20 @@ func (c *Connection) MakePeerConnection() error {
 	peer_conn.OnICECandidate(func(candidate *webrtc.ICECandidate) {
 		if candidate != nil {
 			// Send the ICE candidate to the signaling server
-			log.Println("Sending ICE candidate")
+			slog.Debug("Sending ICE candidate")
 			if err := c.signalCandidate(candidate); err != nil {
-				log.Printf("Failed to send ICE candidate: %v", err)
+				slog.Error("Failed to send ICE candidate", "Error:", err.Error())
 			}
 		}
 	})
 
 	peer_conn.OnConnectionStateChange(func(state webrtc.PeerConnectionState) {
-		log.Println("Connection state changed: ", state.String())
+		slog.Debug("Connection state changed", "state:", state.String())
 		if state == webrtc.PeerConnectionStateClosed {
-			log.Println("exiting...")
+			slog.Debug("exiting...")
 			os.Exit(0)
 		} else if state == webrtc.PeerConnectionStateFailed {
-			log.Println("exiting on failure...")
+			slog.Debug("exiting on failure...")
 			os.Exit(0)
 		}
 	})
@@ -151,7 +151,7 @@ func (c *Connection) ConsumeSignaling() error {
 				return err
 			}
 
-			log.Println("Received offer")
+			slog.Debug("Received offer")
 			if err := c.peer.SetRemoteDescription(sdp); err != nil {
 				return err
 			}
@@ -178,7 +178,7 @@ func (c *Connection) ConsumeSignaling() error {
 				"sdp":  answerJSON,
 			})
 
-			log.Println("sent answer")
+			slog.Debug("sent answer")
 			if err != nil {
 				return err
 			}
@@ -188,20 +188,20 @@ func (c *Connection) ConsumeSignaling() error {
 				return err
 			}
 
-			log.Println("Received answer")
+			slog.Debug("Received answer")
 			if err := c.peer.SetRemoteDescription(sdp); err != nil {
-				log.Fatalf("Invalid remote offer %v\n", err)
+				slog.Error("Invalid remote offer", "Error: ", err.Error())
 				return err
 			}
 		case "candidate":
-			log.Println("Received ICE candidate", string(message["ice"]))
+			slog.Debug("Received ICE candidate", "candidate: ", string(message["ice"]))
 			if err := c.peer.AddICECandidate(
 				webrtc.ICECandidateInit{Candidate: string(message["ice"])},
 			); err != nil {
 				return err
 			}
 		default:
-			log.Println("unknown signal:", message["type"])
+			slog.Debug("unknown signal:", "type", message["type"])
 		}
 	}
 }
@@ -228,13 +228,13 @@ func (c *Connection) CloseAll() error {
 // and to receive the incoming data in the input channel
 func (c *Connection) AttachFunctionality(dc *webrtc.DataChannel, role string) {
 	dc.OnOpen(func() {
-		log.Println("channel opened!")
+		slog.Debug("channel opened!")
 		dc.SendText("Greetings from "+role)
 		var msg []byte
 		for {
 			msg = <-c.In
 			if err := dc.Send(msg); err != nil {
-				log.Println("Error while sending: ", err)
+				slog.Error("Error while sending message", "Error: ", err.Error())
 			}
 		}
 	})

@@ -1,6 +1,6 @@
 package connection
 import (
-  "log"
+  "log/slog"
   "encoding/json"
 )
 
@@ -13,12 +13,12 @@ func Offer(settings *ConnectionSettings) (*Connection, error) {
   */
 	connection := CreateConnection(settings) 
 	connection.CreateBuffers()
-	log.Println("Making WS connection")
+	slog.Info("Making WS connection")
 	_, err := connection.MakeWSConnection()
 	if err != nil {
 		return connection, err
 	}
-	log.Println("Made WS connection")
+	slog.Info("Made WS connection")
 
 	if err := connection.MakePeerConnection(); err != nil {
 		return connection, err
@@ -47,7 +47,7 @@ func Offer(settings *ConnectionSettings) (*Connection, error) {
 		"sdp":  offerJSON,
 	})
 
-	log.Println("Sent offer")
+	slog.Info("Sent offer")
 
 	go connection.ConsumeSignaling()
 	return connection, nil
