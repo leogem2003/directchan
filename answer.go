@@ -13,7 +13,6 @@ func Answer(settings *ConnectionSettings) (*Connection, error) {
 	connection := CreateConnection(settings)
 	connection.CreateBuffers()
 	_, err := connection.MakeWSConnection()
-	Logger.Info("Made WS connection")
 	if err != nil {
 		return connection, err
 	}
@@ -21,7 +20,6 @@ func Answer(settings *ConnectionSettings) (*Connection, error) {
 	if err := connection.MakePeerConnection(); err != nil {
 		return connection, err
 	}
-	Logger.Info("Made peer connection")
 
 	connection.peer.OnDataChannel(func(dc *webrtc.DataChannel) {
 		connection.AttachFunctionality(dc, "answerer")

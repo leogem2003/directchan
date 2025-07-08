@@ -12,12 +12,10 @@ func Offer(settings *ConnectionSettings) (*Connection, error) {
   */
 	connection := CreateConnection(settings) 
 	connection.CreateBuffers()
-	Logger.Info("Making WS connection")
 	_, err := connection.MakeWSConnection()
 	if err != nil {
 		return connection, err
 	}
-	Logger.Info("Made WS connection")
 
 	if err := connection.MakePeerConnection(); err != nil {
 		return connection, err
@@ -46,7 +44,6 @@ func Offer(settings *ConnectionSettings) (*Connection, error) {
 		"sdp":  offerJSON,
 	})
 
-	Logger.Info("Sent offer")
 
 	go connection.ConsumeSignaling()
 	return connection, nil
