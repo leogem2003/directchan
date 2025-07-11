@@ -3,15 +3,12 @@ import (
   "encoding/json"
 )
 
+// Makes an RTC offer. The key is sent to url/offer, 
+// then the negotiation with the key follow the policy
+// specified in Connectioin.MakeWSConnection.
+// Spawns a Connection.ConsumeSIgnaling process
 func Offer(settings *ConnectionSettings) (*Connection, error) {
-  /*
-    Makes an RTC offer. The key is sent to url/offer, 
-    then the negotiation with the key follow the policy
-	  specified in Connectioin.MakeWSConnection.
-	  Spawns a Connection.ConsumeSIgnaling process
-  */
 	connection := CreateConnection(settings) 
-	connection.CreateBuffers()
 	_, err := connection.MakeWSConnection()
 	if err != nil {
 		return connection, err
@@ -25,7 +22,7 @@ func Offer(settings *ConnectionSettings) (*Connection, error) {
 	if err != nil {
 		return connection, err
 	}
-	connection.AttachFunctionality(dc, "offerer")
+	connection.AttachFunctionality(dc)
 
 	offer, err := connection.peer.CreateOffer(nil)
 	if err != nil {

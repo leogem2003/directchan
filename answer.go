@@ -11,7 +11,6 @@ import (
 // the newly created Connection object
 func Answer(settings *ConnectionSettings) (*Connection, error) {
 	connection := CreateConnection(settings)
-	connection.CreateBuffers()
 	_, err := connection.MakeWSConnection()
 	if err != nil {
 		return connection, err
@@ -22,7 +21,7 @@ func Answer(settings *ConnectionSettings) (*Connection, error) {
 	}
 
 	connection.peer.OnDataChannel(func(dc *webrtc.DataChannel) {
-		connection.AttachFunctionality(dc, "answerer")
+		connection.AttachFunctionality(dc)
 	})
 	go connection.ConsumeSignaling()
 	return connection, nil

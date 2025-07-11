@@ -5,7 +5,7 @@ import (
 	"errors"
 	"github.com/gorilla/websocket"
 	"github.com/pion/webrtc/v4"
-	"os"
+	"fmt"
 )
 
 
@@ -16,7 +16,7 @@ type ConnectionSettings struct {
 	TURN string
 	Key string // Channel's identifier
 	BufferSize uint // Size in bytes of the output/input buffers
-	Operation string // ("offer" | "answer")
+	Operation int // (0 = "offer" | 1 = "answer")
 }
 
 type Connection struct {
@@ -30,24 +30,53 @@ type Connection struct {
 	In  chan []byte
 
 	// State channel
-	State chan string
+	State chan webrtc.PeerConnectionState 
 
 	// settings
 	Settings *ConnectionSettings
 }
 
+// Instantiates a new connection from its settings.
+// Basically, decide if it's an offer (settings.Operation==0)
+// or an answer (settings.Operation==1).
+// Also checks for the correctness of the settings field
+func FromSettings(settings *ConnectionSettings) (*Connection, error) {
+	if settings.BufferSize == 0 {
+		return nil, errors.New("Buffer size must be greater than 0")
+	}
+
+	if settings.Operation == 0 {
+		return Offer(settings);
+	} else if settings.Operation == 1 {
+		return Answer(settings);
+	}
+
+	return nil, errors.New(fmt.Sprintf("Invalid setting: %d", settings.Operation));
+}
+
 // Instantiates a new connection with given settinds
 func CreateConnection(settings *ConnectionSettings) *Connection {
-	c := new(Connection)
-	c.Settings = settings
-	return c
+	c := Connection {
+		sock: nil,
+		peer: nil,
+		Out: make(chan []byte, settings.BufferSize),
+		In: make(chan []byte, settings.BufferSize),
+		Settings: settings,
+	}
+	return &c
 }
 
 // Makes a websocket connection with the given url and sends the key to it.
 // Connection process: ws connect -> OK -> Ready
 // Returns when the other peer has connected.
 func (c *Connection) MakeWSConnection() (*websocket.Conn, error) {
-	url := c.Settings.Signaling + "/" + c.Settings.Operation
+	url := c.Settings.Signaling + "/"
+	if (c.Settings.Operation == 0) {
+		url += "offer"
+	} else {
+		url += "answer"
+	}
+
 	conn, _, err := websocket.DefaultDialer.Dial(url, nil)
 	if err != nil {
 		return conn, err
@@ -114,11 +143,7 @@ func (c *Connection) MakePeerConnection() error {
 	})
 
 	peer_conn.OnConnectionStateChange(func(state webrtc.PeerConnectionState) {
-		if state == webrtc.PeerConnectionStateClosed {
-			os.Exit(0)
-		} else if state == webrtc.PeerConnectionStateFailed {
-			os.Exit(0)
-		}
+		c.State <- state
 	})
 
 	return nil
@@ -213,9 +238,8 @@ func (c *Connection) CloseAll() error {
 
 // Enables the server to send the stream to the output channel
 // and to receive the incoming data in the input channel
-func (c *Connection) AttachFunctionality(dc *webrtc.DataChannel, role string) {
+func (c *Connection) AttachFunctionality(dc *webrtc.DataChannel) {
 	dc.OnOpen(func() {
-		dc.SendText("Greetings from "+role)
 		var msg []byte
 		for {
 			msg = <-c.In
@@ -229,13 +253,3 @@ func (c *Connection) AttachFunctionality(dc *webrtc.DataChannel, role string) {
 	})
 }
 
-func (c *Connection) CreateBuffers() error {
-	if c.Settings.BufferSize == 0 {
-		return errors.New("Invalid size for channel: 0")
-	}
-	in := make(chan []byte, c.Settings.BufferSize)
-	out := make(chan []byte, c.Settings.BufferSize)
-	c.In = in
-	c.Out = out
-	return nil
-}

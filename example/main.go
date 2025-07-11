@@ -8,17 +8,26 @@ import (
 	"github.com/leogem2003/directchan"
 )
 
-func chat(in chan []byte, out chan []byte) {
-	// really bad
-	var msg string
+func chat(c *connection.Connection) {
+	// output daemon
 	go func() {
 		for {
-			fmt.Println(string(<-out))
+			fmt.Println(string(<-c.Out))
 		}
 	}()
+
+	// state daemon
+	go func() {
+		for {
+			fmt.Println("State changed!");
+			fmt.Println((<-c.State).String())
+		}
+	}()
+
+	var msg string
 	for {
 		fmt.Scan(&msg)
-		in <- []byte(msg)
+		c.In <- []byte(msg)
 	}
 }
 
@@ -34,16 +43,17 @@ func main() {
 	settings.STUN = []string{"stun:stun.l.google.com:19302"}
 	settings.Signaling = os.Args[1]
 	settings.BufferSize = 1
-	settings.Operation = os.Args[2]
 	switch os.Args[2] {
 	case "answer":
-		conn, err = connection.Answer(settings)
+		settings.Operation = 1
 	case "offer":
-		conn, err = connection.Offer(settings)
+		settings.Operation = 0
 	default:
 		log.Println("Error: invalid operation", os.Args[1])
 		return
 	}
+
+	conn, err = connection.FromSettings(settings)
 	if err != nil {
 		if conn != nil {
 			conn.CloseAll()
@@ -51,5 +61,5 @@ func main() {
 		log.Fatalln(err)
 	}
 
-	chat(conn.In, conn.Out)
+	chat(conn)
 }
