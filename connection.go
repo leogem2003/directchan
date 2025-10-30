@@ -6,6 +6,7 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/pion/webrtc/v4"
 	"fmt"
+	"sync"
 )
 
 
@@ -26,7 +27,9 @@ type Connection struct {
 	peer *webrtc.PeerConnection
 
 	// IO buffers
+	// connection output (received from remote)
 	Out chan []byte
+	// connection input (send to remote)
 	In  chan []byte
 
 	// State channel
@@ -34,6 +37,11 @@ type Connection struct {
 
 	// settings
 	Settings *ConnectionSettings
+
+	// true iff CloseAll has been called
+	IsClosed bool
+
+	mu sync.Mutex	
 }
 
 // Instantiates a new connection from its settings.
@@ -46,12 +54,12 @@ func FromSettings(settings *ConnectionSettings) (*Connection, error) {
 	}
 
 	if settings.Operation == 0 {
-		return Offer(settings);
+		return Offer(settings)
 	} else if settings.Operation == 1 {
-		return Answer(settings);
+		return Answer(settings)
 	}
 
-	return nil, errors.New(fmt.Sprintf("Invalid setting: %d", settings.Operation));
+	return nil, errors.New(fmt.Sprintf("Invalid setting: %d", settings.Operation))
 }
 
 // Instantiates a new connection with given settinds
@@ -223,6 +231,15 @@ func (c *Connection) CreateDataChannel() (*webrtc.DataChannel, error) {
 }
 
 func (c *Connection) CloseAll() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	
+	if c.IsClosed == true {
+		return nil
+	}
+
+	close(c.In)
+	close(c.Out)
 	if c.sock != nil {
 		if err := c.sock.Close(); err != nil {
 			return err
@@ -233,6 +250,8 @@ func (c *Connection) CloseAll() error {
 			return err
 		}
 	}
+
+	c.IsClosed = true
 	return nil
 }
 
@@ -240,15 +259,19 @@ func (c *Connection) CloseAll() error {
 // and to receive the incoming data in the input channel
 func (c *Connection) AttachFunctionality(dc *webrtc.DataChannel) {
 	dc.OnOpen(func() {
+		// send
 		var msg []byte
 		for {
 			msg = <-c.In
 			if err := dc.Send(msg); err != nil {
+				c.CloseAll()
+				return
 			}
 		}
 	})
 
 	dc.OnMessage(func(msg webrtc.DataChannelMessage) {
+		//receive
 		c.Out <- msg.Data
 	})
 }

@@ -55,9 +55,6 @@ func main() {
 
 	conn, err = connection.FromSettings(settings)
 	if err != nil {
-		if conn != nil {
-			conn.CloseAll()
-		}
 		log.Fatalln(err)
 	}
 

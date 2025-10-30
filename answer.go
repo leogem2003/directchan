@@ -13,10 +13,12 @@ func Answer(settings *ConnectionSettings) (*Connection, error) {
 	connection := CreateConnection(settings)
 	_, err := connection.MakeWSConnection()
 	if err != nil {
+		connection.CloseAll()
 		return connection, err
 	}
 
 	if err := connection.MakePeerConnection(); err != nil {
+		connection.CloseAll()
 		return connection, err
 	}
 
