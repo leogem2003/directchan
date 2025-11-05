@@ -260,9 +260,7 @@ func (c *Connection) CloseAll() error {
 func (c *Connection) AttachFunctionality(dc *webrtc.DataChannel) {
 	dc.OnOpen(func() {
 		// send
-		var msg []byte
-		for {
-			msg = <-c.In
+		for msg := range c.In {
 			if err := dc.Send(msg); err != nil {
 				c.CloseAll()
 				return
