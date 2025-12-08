@@ -3,10 +3,10 @@ package connection
 import (
 	"encoding/json"
 	"errors"
-	"github.com/gorilla/websocket"
-	"github.com/pion/webrtc/v4"
-	"fmt"
 	"sync"
+
+	ws "github.com/gorilla/websocket"
+	"github.com/pion/webrtc/v4"
 )
 
 
@@ -17,17 +17,16 @@ type ConnectionSettings struct {
 	TURN string
 	Key string // Channel's identifier
 	BufferSize uint // Size in bytes of the output/input buffers
-	Operation int // (0 = "offer" | 1 = "answer")
 }
 
 type Connection struct {
-	// Signaling connection (websocket)
-	sock *websocket.Conn
+	// Signaling connection (ws)
+	sock *ws.Conn
 	// Peer connection (webrtc)
 	peer *webrtc.PeerConnection
 
 	// IO buffers
-	// connection output (received from remote)
+	// connection output (receive from remote)
 	Out chan []byte
 	// connection input (send to remote)
 	In  chan []byte
@@ -38,6 +37,9 @@ type Connection struct {
 	// settings
 	Settings *ConnectionSettings
 
+	// true iff the connection has an offer role
+	offer bool
+
 	// true iff CloseAll has been called
 	IsClosed bool
 
@@ -45,24 +47,28 @@ type Connection struct {
 }
 
 // Instantiates a new connection from its settings.
-// Basically, decide if it's an offer (settings.Operation==0)
-// or an answer (settings.Operation==1).
-// Also checks for the correctness of the settings field
 func FromSettings(settings *ConnectionSettings) (*Connection, error) {
 	if settings.BufferSize == 0 {
 		return nil, errors.New("Buffer size must be greater than 0")
 	}
-
-	if settings.Operation == 0 {
-		return Offer(settings)
-	} else if settings.Operation == 1 {
-		return Answer(settings)
+	c := CreateConnection(settings)
+	err := c.ConnectSignaling()
+	if err != nil {
+		return c, err
 	}
 
-	return nil, errors.New(fmt.Sprintf("Invalid setting: %d", settings.Operation))
+	if err := c.MakePeerConnection(); err != nil {
+		c.CloseAll()
+		return c, err
+	}
+
+	if c.offer {
+		return Offer(c)
+	} 
+	return Answer(c)
 }
 
-// Instantiates a new connection with given settinds
+// Instantiates a new connection with given settings
 func CreateConnection(settings *ConnectionSettings) *Connection {
 	c := Connection {
 		sock: nil,
@@ -74,55 +80,60 @@ func CreateConnection(settings *ConnectionSettings) *Connection {
 	return &c
 }
 
-// Makes a websocket connection with the given url and sends the key to it.
-// Connection process: ws connect -> OK -> Ready
+// Makes a ws connection with the given url and sends the key to it.
+// Connection process: ws connect -> (OFFER|ANSWER) -> Ready
 // Returns when the other peer has connected.
-func (c *Connection) MakeWSConnection() (*websocket.Conn, error) {
+func (c *Connection) ConnectSignaling() error {
 	url := c.Settings.Signaling + "/"
-	if (c.Settings.Operation == 0) {
-		url += "offer"
-	} else {
-		url += "answer"
-	}
 
-	conn, _, err := websocket.DefaultDialer.Dial(url, nil)
+	conn, _, err := ws.DefaultDialer.Dial(url, nil)
 	if err != nil {
-		return conn, err
+		if conn != nil {
+			conn.Close()
+		}
+		return err
 	}
 
-	err = conn.WriteMessage(websocket.TextMessage, []byte(c.Settings.Key))
+	err = conn.WriteMessage(ws.TextMessage, []byte(c.Settings.Key))
 	if err != nil {
-		return conn, err
+		conn.Close()
+		return  err
 	}
 
-	// OK
+	// ROLE
 	_, resp, err := conn.ReadMessage()
 	if err != nil {
 		conn.Close()
-		return conn, err
+		return err
 	}
-	if string(resp) != "OK" {
-		conn.Close()
-		return conn, errors.New("Bad response: " + string(resp))
+
+	switch string(resp) {
+		case "OFFER": c.offer=true
+		case "ANSWER": c.offer=false
+		default: 
+			conn.Close()
+			return errors.New("Bad response: " + string(resp))
 	}
 
 	// Ready
 	_, resp, err = conn.ReadMessage()
 	if err != nil {
 		conn.Close()
-		return conn, err
+		return err
 	}
 	if string(resp) != "Ready" {
 		conn.Close()
-		return conn, errors.New("Bad response: " + string(resp))
+		return errors.New("Bad response: " + string(resp))
 	}
 	c.sock = conn
-	return conn, nil
+	return nil
 }
 
 // Sends an ICEcandidate to the signaling server
 func (c *Connection) signalCandidate(candidate *webrtc.ICECandidate) error {
 	candidateJSON := []byte(candidate.ToJSON().Candidate)
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	return c.sock.WriteJSON(map[string][]byte{
 		"type": []byte("candidate"),
 		"ice":  candidateJSON,
@@ -255,8 +266,9 @@ func (c *Connection) CloseAll() error {
 	return nil
 }
 
-// Enables the server to send the stream to the output channel
-// and to receive the incoming data in the input channel
+// Connect In and Out channels to the peer connection
+// Without calling this function, those channels are detached
+// and will not send data
 func (c *Connection) AttachFunctionality(dc *webrtc.DataChannel) {
 	dc.OnOpen(func() {
 		// send
@@ -274,3 +286,50 @@ func (c *Connection) AttachFunctionality(dc *webrtc.DataChannel) {
 	})
 }
 
+// Answer to a sdp offer.
+// Spawns a Connection.ConsumeSignaling process and returns
+// the newly created Connection object
+func Answer(connection *Connection) (*Connection, error) {
+	connection.peer.OnDataChannel(func(dc *webrtc.DataChannel) {
+		connection.AttachFunctionality(dc)
+	})
+	go connection.ConsumeSignaling()
+	return connection, nil
+}
+
+// Makes an RTC offer. 
+// Spawns a Connection.ConsumeSignaling process
+func Offer(connection *Connection) (*Connection, error) {
+	dc, err := connection.CreateDataChannel()
+	if err != nil {
+		connection.CloseAll()
+		return connection, err
+	}
+	connection.AttachFunctionality(dc)
+
+	offer, err := connection.peer.CreateOffer(nil)
+	if err != nil {
+		connection.CloseAll()
+		return connection, err
+	}
+
+	if err = connection.peer.SetLocalDescription(offer); err != nil {
+		connection.CloseAll()
+		return connection, err
+	}
+
+	offerJSON, err := json.Marshal(offer)
+	if err != nil {
+		connection.CloseAll()
+		return connection, err
+	}
+
+	connection.sock.WriteJSON(map[string][]byte{
+		"type": []byte("offer"),
+		"sdp":  offerJSON,
+	})
+
+
+	go connection.ConsumeSignaling()
+	return connection, nil
+}
