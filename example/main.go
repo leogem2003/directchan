@@ -32,26 +32,17 @@ func chat(c *connection.Connection) {
 }
 
 func main() {
-	if len(os.Args) < 3 {
-		fmt.Println("Missing argument")
+	if len(os.Args) < 2 {
+		fmt.Println("Missing argument. Usage: example <ws address> key")
 		return
 	}
 	var err error
 	var conn *connection.Connection
 	settings := new(connection.ConnectionSettings)
-	settings.Key = os.Args[3]
+	settings.Key = os.Args[2]
 	settings.STUN = []string{"stun:stun.l.google.com:19302"}
 	settings.Signaling = os.Args[1]
 	settings.BufferSize = 1
-	switch os.Args[2] {
-	case "answer":
-		settings.Operation = 1
-	case "offer":
-		settings.Operation = 0
-	default:
-		log.Println("Error: invalid operation", os.Args[1])
-		return
-	}
 
 	conn, err = connection.FromSettings(settings)
 	if err != nil {

@@ -1,6 +1,6 @@
 # DirectChan
 ### Description
-`DirectChan` is a minimal Go library implementing the webrtc protocol for peer communication. It is based on the [Pion/webrtc](https://github.com/pion/webrtc) library and aims to serve as a base for applications leveraging the WebRTC protocol.
+`DirectChan` is a minimalistic Go library implementing the webrtc protocol for peer communication. It is based on the [Pion/webrtc](https://github.com/pion/webrtc) library and aims to serve as a base for applications leveraging the WebRTC protocol.
 The signaling is handled by a signaling server implemented in `server/main.go`.
 
 ### Usage
@@ -16,11 +16,11 @@ go build -o bin/example example/main.go
 ```
 Then make an offer for a connection called "secret-key":
 ```
-./bin/example ws://<server-ip>:<port> offer "secret-key"
+./bin/example ws://<server-ip>:<port> "secret-key"
 ```
 Lastly make an answer for the connection above:
 ```
-./bin/example ws://<server-ip>:<port> answer "secret-key"
+./bin/example ws://<server-ip>:<port> "secret-key"
 ```
 Note: prepare the two commands to run because the server keeps the key active for ten seconds.
 
