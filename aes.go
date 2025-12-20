@@ -36,6 +36,9 @@ func NewAESGCM(key []byte) (*AESGCM, error) {
 	}, nil
 }
 
+func (c *AESGCM) NonceSize() int {
+	return c.nonceSize
+}
 
 func (c *AESGCM) Encrypt(
 	plaintext []byte,
