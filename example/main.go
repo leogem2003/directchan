@@ -5,22 +5,35 @@ import (
 	"log"
 	"os"
 
+	"github.com/pion/webrtc/v4"
 	"github.com/leogem2003/directchan"
 )
 
 func chat(c *connection.Connection) {
+	exit := make(chan bool, 1)
+
 	// output daemon
 	go func() {
 		for {
-			fmt.Println(string(<-c.Out))
+			select {
+			case msg := <-c.Out:
+				fmt.Println(string(msg))
+			case <-exit:
+				os.Exit(0)
+			}
 		}
 	}()
 
 	// state daemon
 	go func() {
 		for {
-			fmt.Println("State changed!");
-			fmt.Println((<-c.State).String())
+			state := <-c.State
+			fmt.Printf("State changed: %v\n", state)
+			switch state {
+			case webrtc.PeerConnectionStateDisconnected:
+				fmt.Printf("closing...")
+				exit <- true
+			}
 		}
 	}()
 

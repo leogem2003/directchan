@@ -75,6 +75,7 @@ func CreateConnection(settings *ConnectionSettings) *Connection {
 		peer: nil,
 		Out: make(chan []byte, settings.BufferSize),
 		In: make(chan []byte, settings.BufferSize),
+		State: make(chan webrtc.PeerConnectionState, 1),
 		Settings: settings,
 	}
 	return &c
