@@ -19,6 +19,12 @@ type ConnectionSettings struct {
 	BufferSize uint // Size in bytes of the output/input buffers
 }
 
+// Interface to represent a two-way channel
+type IOChannel interface {
+	Send([]byte)
+	Recv() []byte
+}
+
 type Connection struct {
 	// Signaling connection (ws)
 	sock *ws.Conn
@@ -333,4 +339,12 @@ func Offer(connection *Connection) (*Connection, error) {
 
 	go connection.ConsumeSignaling()
 	return connection, nil
+}
+
+func (c *Connection) Send(b []byte) {
+	c.In <- b
+}
+
+func (c *Connection) Recv() []byte {
+	return <- c.Out
 }
