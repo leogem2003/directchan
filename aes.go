@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
+	"slices"
 )
 
 type AESGCM struct {
@@ -13,6 +14,11 @@ type AESGCM struct {
 	nonceSize int
 }
 
+type AESConnection struct {
+	Conn IOChannel 
+	Cypher *AESGCM	
+	Err chan error
+}
 
 // NewAESGCM loads the key once and initializes AES-GCM once.
 func NewAESGCM(key []byte) (*AESGCM, error) {
@@ -43,29 +49,27 @@ func (c *AESGCM) NonceSize() int {
 func (c *AESGCM) Encrypt(
 	plaintext []byte,
 	nonce []byte,
-	associatedData []byte,
 ) ([]byte, error) {
 
 	if len(nonce) != c.nonceSize {
 		return nil, errors.New("invalid nonce size")
 	}
 
-	// associatedData can be nil
-	ciphertext := c.aead.Seal(nil, nonce, plaintext, associatedData)
+	// associatedData not supported
+	ciphertext := c.aead.Seal(nil, nonce, plaintext, nil)
 	return ciphertext, nil
 }
 
 func (c *AESGCM) Decrypt(
 	ciphertext []byte,
 	nonce []byte,
-	associatedData []byte,
 ) ([]byte, error) {
 
 	if len(nonce) != c.nonceSize {
 		return nil, errors.New("invalid nonce size")
 	}
 
-	plaintext, err := c.aead.Open(nil, nonce, ciphertext, associatedData)
+	plaintext, err := c.aead.Open(nil, nonce, ciphertext, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -90,3 +94,35 @@ func ToHex(bkey []byte) string {
 func FromHex(s string) ([]byte, error) {
 	return hex.DecodeString(s)
 }
+
+
+func NewAESConnection(conn IOChannel, cypher *AESGCM) *AESConnection {
+	return &AESConnection{
+		conn,
+		cypher,
+		make(chan error, 1),
+	}
+}
+
+func (c *AESConnection) Send(b []byte) {
+	nonce := c.Cypher.GenerateNonce()
+	msg, err := c.Cypher.Encrypt(b, nonce)
+	
+	if err != nil {
+		c.Err <- err
+	}
+
+	c.Conn.Send(slices.Concat(msg, nonce))
+}
+
+func (c *AESConnection) Recv() []byte {
+	msg := c.Conn.Recv()
+	nonceOffset := len(msg)-c.Cypher.NonceSize() 
+	nonce := msg[nonceOffset:]
+	plaintext, err := c.Cypher.Decrypt(msg[:nonceOffset], nonce)
+	if err != nil {
+		c.Err <- err
+	}
+	return plaintext	
+}
+
