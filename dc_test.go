@@ -13,7 +13,7 @@ func Test(t *testing.T) {
 		Signaling:"ws://0.0.0.0:"+port,
 		STUN:[]string{"stun:stun.l.google.com:19302"},
 		Key:"cd",
-		BufferSize:32,
+		BufferSize:1,
 	}
 
 	payload := []byte("test")

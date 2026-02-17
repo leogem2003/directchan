@@ -44,7 +44,7 @@ type Connection struct {
 	Settings *ConnectionSettings
 
 	// true iff the connection has an offer role
-	offer bool
+	Offer bool
 
 	// true iff CloseAll has been called
 	IsClosed bool
@@ -68,7 +68,7 @@ func FromSettings(settings *ConnectionSettings) (*Connection, error) {
 		return c, err
 	}
 
-	if c.offer {
+	if c.Offer {
 		return Offer(c)
 	} 
 	return Answer(c)
@@ -115,8 +115,8 @@ func (c *Connection) ConnectSignaling() error {
 	}
 
 	switch string(resp) {
-		case "OFFER": c.offer=true
-		case "ANSWER": c.offer=false
+		case "OFFER": c.Offer=true
+		case "ANSWER": c.Offer=false
 		default: 
 			conn.Close()
 			return errors.New("Bad response: " + string(resp))
@@ -347,4 +347,10 @@ func (c *Connection) Send(b []byte) {
 
 func (c *Connection) Recv() []byte {
 	return <- c.Out
+}
+
+func (c *Connection) mutexSend(b []byte) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.In <- b
 }
