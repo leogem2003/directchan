@@ -26,5 +26,4 @@ Note: prepare the two commands to run because the server keeps the key active fo
 
 ### Future improvements
 - WebSocket encryption with `wss` protocol support
-- WebRTC stream encryption
 - Media optimizations
