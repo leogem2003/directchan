@@ -181,9 +181,9 @@ func (c *Connection) MakePeerConnection() error {
 //  answer: an SDP answer
 //  candidate: ICE candidate message
 func (c *Connection) ConsumeSignaling() error {
-
 	var message map[string][]byte
 	var sdp webrtc.SessionDescription
+
 	for {
 		if err := c.sock.ReadJSON(&message); err != nil {
 			return err
@@ -215,12 +215,12 @@ func (c *Connection) ConsumeSignaling() error {
 			if err != nil {
 				return err
 			}
-
+			c.mu.Lock()
 			err = c.sock.WriteJSON(map[string][]byte{
 				"type": []byte("answer"),
 				"sdp":  answerJSON,
 			})
-
+			c.mu.Unlock()
 			if err != nil {
 				return err
 			}
@@ -307,6 +307,9 @@ func Answer(connection *Connection) (*Connection, error) {
 // Makes an RTC offer. 
 // Spawns a Connection.ConsumeSignaling process
 func Offer(connection *Connection) (*Connection, error) {
+	defer connection.mu.Unlock()
+	connection.mu.Lock()
+
 	dc, err := connection.CreateDataChannel()
 	if err != nil {
 		connection.CloseAll()
